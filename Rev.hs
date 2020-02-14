@@ -1,6 +1,5 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE BangPatterns #-}
 
 module Rev where
 import qualified Control.Monad.Fail as MF
@@ -73,7 +72,7 @@ eval (EV n) = do
 -- ds/dx = ds/dy.dy/dx + ds/dz.dz/dx
 
 data SRM a = SRM {
-  run :: Env Int -> Env Int -> (a, Env Int, Env Int)
+  run :: (Env Int, Env Int) -> (a, Env Int, Env Int)
 } 
 
 instance Functor SRM where
@@ -82,30 +81,37 @@ instance Functor SRM where
    return $ f x
 
 instance Monad SRM where
-  return a = SRM $ \v g -> (a, v, g)
-  sx >>= x2sy = SRM $ \v g  -> 
-    let ~(x, v', g'') = run sx v g'; sy = x2sy x; ~(y, v'', g') = run sy v' g in (y, v'', g'')
+  return a = SRM $ \ ~(v, g) -> (a, v, g)
+  sx >>= x2sy = SRM $ \ ~ (v, g)  -> 
+    let ~(x, v', g'') = run sx (v, g'); sy = x2sy x; ~(y, v'', g') = run sy (v', g) in (y, v'', g'')
 
 instance MonadFix SRM where
+   -- mfix :: (x -> SRM x) -> SRM x
    mfix f = do
-    rec x <- (f x)
-    return x
-
+      rec x <- (f x)
+      return x
 
 instance Applicative SRM where pure = return; (<*>) = ap
 
 accumgrad_ :: Name -> Int -> SRM ()
-accumgrad_ n v = SRM $ \vals ders -> ((), vals, M.insertWith (+) n v ders)
+accumgrad_ n v = SRM $ \ ~(vals, ders) -> ((), vals, M.insertWith (+) n v ders)
+
+
+accumval_ :: Name -> Int -> SRM ()
+accumval_ n v = SRM $ \ ~(vals, ders) -> ((), M.insertWith (+) n v vals, ders)
 
 recvgrad :: Name -> SRM Int
 -- recvgrad n = SRM $ \vals ders -> (M.findWithDefault 0 n ders, vals, ders)
-recvgrad n = SRM $ \vals ders -> (ders M.! n, vals, ders)
+recvgrad n = SRM $ \ ~(vals, ders) -> (ders M.! n, vals, ders)
 
 recvval :: Name -> SRM Int
-recvval n = SRM $ \vals ders -> (vals M.! n, vals, ders)
+recvval n = SRM $ \ ~(vals, ders) -> (vals M.! n, vals, ders)
 
 sendval :: Name -> Int -> SRM ()
-sendval n v = SRM $  \vals ders -> ((), M.insert n v vals, ders) 
+sendval n v = SRM $  \ ~(vals, ders) -> ((), M.insert n v vals, ders) 
+
+sendgrad :: Name -> Int -> SRM ()
+sendgrad n v = SRM $  \ ~(vals, ders) -> ((), vals, M.insert n v ders)
 
 -- | values
 data V = VC Int | VN Name deriving(Show)
@@ -116,7 +122,13 @@ evalV (VN n) = recvval n
 
 accumgrad :: V -> Int -> SRM ()
 accumgrad (VC _) g = return ()
-accumgrad (VN n) g = accumgrad_ n g
+accumgrad (VN n) g = accumval_ n g
+
+-- | send value backwards in time
+var :: Name -> Int -> SRM ()
+var n val = mdo
+  sendgrad n val
+  return ()
 
 add :: Name -> V -> V -> SRM ()
 add n l r = do
@@ -131,10 +143,6 @@ add n l r = do
   accumgrad l (dsdn*1)
   accumgrad r (dsdn*1)
 
-var :: Name -> Int -> SRM ()
-var n val = mdo
-  sendval n val
-  return ()
 
 mul :: Name -> V -> V -> SRM ()
 mul n l r = mdo
@@ -153,33 +161,14 @@ mul n l r = mdo
 
   return ()
 
-programsendrecv :: SRM ()
-programsendrecv = do
-  dz <- recvgrad "z"
-  sendval "z" dz
-
 program0 :: SRM ()
 program0 = var "z" 3
 
 program1 :: SRM ()
-program1 = 
- var "x" 2 >> mul "xsq" (VN "x") (VN "x")
+program1 = do
+ var "x" 2
+ mul "xsq" (VN "x") (VN "x")
 
-program1' :: SRM Int
-program1' = mdo
- -- compute x
- sendval "x" 2
- -- compute xsq
- xv <- recvval "x"
- sendval "xsq" $ xv * xv
- -- accumulate derivatives
-
- xsqval <- recvval "xsq"
- accumgrad_ "x" (xv * ds_dxsq)
- -- accumgrad_ "x" (xv * ds_dxsq)
- ds_dxsq <- recvgrad "xsq"
- accumgrad_ "xsq" 1
- return ds_dxsq
 
 -- | contains x, ds_dx, sq, ds_dsq
 -- sq = x * x
@@ -199,8 +188,20 @@ program2 = do
  mul "xsq" (VN "x") (VN "x")
  add "z" (VN "xsq") (VN "y")
 
+
+-- | x = 10
+-- xsq = x * x
+program_manual :: SRM ()
+program_manual = mdo
+  accumval_ "xsq" 1
+  x <- recvgrad "x"
+  sendgrad "xsq" (x * x)
+  -- ds_dxsq <- recvval "xsq"
+  -- accumval_ "xval" (xval)
+  sendgrad "x" 10
+
 runprogram :: SRM a -> Name -> (a, Env Int, Env Int)
 runprogram p output = 
-  let (a, vals, ders) = run (do accumgrad_ output 1; v <- p; accumgrad_ output 1; return v) M.empty M.empty
+  let (a, vals, ders) = run (do v <- p; return v) (M.empty, M.empty)
   in (a, vals, ders)
 

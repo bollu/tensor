@@ -70,5 +70,41 @@ p1 = mdo
  setvar "x" 10
  return $ l
 
-
 (v, grads, vals) =  runt p1 (const 0, const 0)
+
+
+-- V2.
+-- | values flow forward, gradients flow backward
+getvar' :: Name -> I Int
+getvar' n = getfwdval n
+
+-- | set value
+setvar' :: Name -> Int -> I ()
+setvar' n i = setfwdval n  i
+
+getgrad' :: Name -> I Int
+getgrad' n = getbwdval n
+
+setgrad' :: Name -> Int -> I ()
+setgrad' n i = setbwdval n i
+
+accumgrad' :: Name -> Int -> I ()
+accumgrad' n i = do
+  g <- getgrad' n
+  setgrad' n (i + g)
+
+-- x = 10
+-- xsq = x * x
+p1' :: I Int
+p1' = mdo
+ setvar' "x" 10
+-- xsq code
+ l <- getvar' "x"; r <- getvar' "x"
+ setvar "xsq" (l * r)
+ -- d_xsq <- getgrad "xsq"
+ accumgrad' "x" (r)
+ accumgrad' "x" (l)
+ accumgrad' "xsq" 1
+ return 52
+
+(v', grads', vals') =  runt p1' (const 0, const 0)
