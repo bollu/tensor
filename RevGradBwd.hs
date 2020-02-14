@@ -51,25 +51,24 @@ setgrad :: Name -> Int -> I ()
 setgrad n i = setbwdval n i
 
 accumgrad :: Name -> Int -> I ()
-accumgrad n i = do
-  g <- getgrad n
-  setgrad n (i + g)
+accumgrad n i = T $ \ ~ (f, b) -> ((), f, \ncur -> (if ncur == n then i else 0) + b ncur)
 
 -- x = 10
 -- xsq = x * x
 p1 :: I ()
 p1 = do
- setvar "x" 10
+ setvar "x" 2
+ setvar "y" 3
 
  -- xsq
- l <- getvar "x"; r <- getvar "x"
- setvar "xsq" (l * r)
+ l <- getvar "x"; r <- getvar "y"
+ setvar "xy" (l * r)
 
- d_xsq <- getgrad "xsq"
- accumgrad "x" (d_xsq * r); accumgrad "x" (d_xsq * l)
+ d_xsq <- getgrad "xy"
+ accumgrad "x" (d_xsq * r); accumgrad "y" (d_xsq * l)
 
- setgrad "xsq" 1
+ setgrad "xy" 1
 
 (v, vals, grads) =  runt p1 (const 42, const 0)
-runthis = (vals "x", vals "xsq", grads "x", grads "xsq")
+runthis = (vals "x", vals "y", vals "xy", grads "x", grads "y", grads "xy")
 
