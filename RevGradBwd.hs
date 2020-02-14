@@ -72,3 +72,34 @@ p1 = do
 (v, vals, grads) =  runt p1 (const 42, const 0)
 runthis = (vals "x", vals "y", vals "xy", grads "x", grads "y", grads "xy")
 
+-- | multiply two values
+mul :: Name -> Name -> Name -> I ()
+mul x nl nr = do
+ l <- getvar nl; r <- getvar nr
+ setvar x (l * r)
+ ds_dx <- getgrad x
+ accumgrad nl (ds_dx * r)
+ accumgrad nr (ds_dx * l)
+
+add :: Name -> Name -> Name -> I ()
+add x nl nr = do
+ l <- getvar nl; r <- getvar nr
+ setvar x (l + r)
+ ds_dx <- getgrad x
+ accumgrad nl (ds_dx)
+ accumgrad nr (ds_dx)
+
+p2 :: I ()
+p2 = do
+ setvar "x" 2
+ setvar "y" 3
+
+ mul "xsq" "x" "x"
+ mul "xy" "x" "y"
+
+ add "z" "xsq" "xy"
+
+ setgrad "z" 1
+
+(_, vals2, grads2) =  runt p2 (const 0, const 0)
+runthis2 = (vals "x", vals "y", vals "xy", grads "x", grads "y", grads "xy")
