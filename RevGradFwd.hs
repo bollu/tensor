@@ -57,7 +57,7 @@ accumgrad n i = do
 -- x = 10
 -- xsq = x * x
 p1 :: I Int
-p1 = mdo
+p1 = do
  setgrad "xsq" 1
 -- xsq code
  l <- getvar "x"; r <- getvar "x"
@@ -71,3 +71,56 @@ p1 = mdo
 
 (v, grads, vals) =  runt p1 (const 0, const 0)
 runthis = (vals "x", vals "xsq", grads "x", grads "xsq")
+
+
+-- | multiply two values
+mul :: Name -> Name -> Name -> I ()
+mul x nl nr = do
+ l <- getvar nl; r <- getvar nr
+ setvar x (l * r)
+ ds_dx <- getgrad x
+ accumgrad nl (ds_dx * r)
+ accumgrad nr (ds_dx * l)
+
+add :: Name -> Name -> Name -> I ()
+add x nl nr = do
+ l <- getvar nl; r <- getvar nr
+ setvar x (l + r)
+ ds_dx <- getgrad x
+ accumgrad nl (ds_dx)
+ accumgrad nr (ds_dx)
+
+p2 :: I ()
+p2 = do
+ setgrad "z" 1
+
+ -- z = xy + xsq
+ xt <- getvar "xy"
+ xsq <- getvar "xsq"
+ setvar "z" (xt + xsq)
+ ds_dz <- getgrad "z"
+ accumgrad "xy" (ds_dz * 1)
+ accumgrad "xsq" (ds_dz * 1)
+
+ -- x * y
+ x <- getvar "x"
+ y <- getvar "y"
+ setvar "xy" (x * y)
+
+ ds_dxdy <- getgrad "xy"
+ accumgrad "x" (ds_dxdy * y)
+ accumgrad "y" (ds_dxdy * x)
+
+ -- xsq
+ x <- getvar "x"
+ setvar "xsq" (x * x)
+ ds_dxsq <- getgrad "xsq"
+ accumgrad "x" (ds_dxsq * x)
+ accumgrad "x" (ds_dxsq * x)
+
+ setvar "x" 2
+ setvar "y" 3
+
+((), grads2, vals2) =  runt p2 (const 0, const 0)
+runthis2 = (vals2 "x", vals2 "y", vals2 "xsq", vals2 "xy", vals2 "z", 
+            grads2 "x", grads2 "y", grads2 "xsq", grads2 "xy", grads2 "z")

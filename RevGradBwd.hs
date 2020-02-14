@@ -37,39 +37,39 @@ type I x = T Name Int Name Int x
 
 -- V2.
 -- | values flow forward, gradients flow backward
-getvar' :: Name -> I Int
-getvar' n = getfwdval n
+getvar :: Name -> I Int
+getvar n = getfwdval n
 
 -- | set value
-setvar' :: Name -> Int -> I ()
-setvar' n i = setfwdval n  i
+setvar :: Name -> Int -> I ()
+setvar n i = setfwdval n  i
 
-getgrad' :: Name -> I Int
-getgrad' n = getbwdval n
+getgrad :: Name -> I Int
+getgrad n = getbwdval n
 
-setgrad' :: Name -> Int -> I ()
-setgrad' n i = setbwdval n i
+setgrad :: Name -> Int -> I ()
+setgrad n i = setbwdval n i
 
-accumgrad' :: Name -> Int -> I ()
-accumgrad' n i = do
-  g <- getgrad' n
-  setgrad' n (i + g)
+accumgrad :: Name -> Int -> I ()
+accumgrad n i = do
+  g <- getgrad n
+  setgrad n (i + g)
 
 -- x = 10
 -- xsq = x * x
-p1' :: I Int
-p1' = mdo
- setvar' "x" 10
- -- xsq code
- l <- getvar' "x"; r <- getvar' "x"
- accumgrad' "x" (d_xsq * r)
- accumgrad' "x" (d_xsq * l)
- setvar' "xsq" (l * r)
+p1 :: I ()
+p1 = do
+ setvar "x" 10
 
- d_xsq <- getgrad' "xsq"
- setgrad' "xsq" 1
- return 52
+ -- xsq
+ l <- getvar "x"; r <- getvar "x"
+ setvar "xsq" (l * r)
 
-(v', vals', grads') =  runt p1' (const 42, const 0)
-runthis = (vals' "x", vals' "xsq", grads' "x", grads' "xsq")
+ d_xsq <- getgrad "xsq"
+ accumgrad "x" (d_xsq * r); accumgrad "x" (d_xsq * l)
+
+ setgrad "xsq" 1
+
+(v, vals, grads) =  runt p1 (const 42, const 0)
+runthis = (vals "x", vals "xsq", grads "x", grads "xsq")
 
